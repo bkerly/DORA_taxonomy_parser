@@ -38,42 +38,48 @@ taxonomy_choices <- unique(taxonomy_checklist$name)
 dora_data <- read_csv("data/DPO_Health_Alert_Network_CDPHE.csv")
 # This is a function which converts the DORA file into a list of providers and their specialties
 # Every provider gets listed once for each specialty they hold, one specialty per line.
-parse_specialties <- function(dora_data_input=dora_data)
-{
-  # Here's the format:
-  # (Certification) Internal Medicine, (Certification) Pediatrics, (Certification) Preventive Medicine: Addiction Medicine, (Specialty) Emergency Medicine, (Specialty) Internal Medicine 
-  
-  # Create different columns for each specialty
-  data2 <- dora_data_input %>%
-    select(Credential_CredentialNumber,Certification_Specialty1,emailAddress) %>%
-    `colnames<-`(c("cred_num","cert_spec","email")) %>%
-    separate(cert_spec, into=c("a","b","c","d","e","f","g","h","i","j","k","l","m"),
-             sep = ", ") 
-  
-  # Make it long form and distinguish between specialties and certifications (Which we don't care about)
-  data3 <- data2 %>%
-    pivot_longer(-c(cred_num,email)) %>%
-    filter(!is.na(value)) %>%
-    mutate(specialty = 
-             startsWith(value, prefix = "(Specialty)"),
-           certification = 
-             startsWith(value, prefix = "(Certification)")
-    ) %>%
-    mutate(value = gsub(".*) ", "", value))
-  
-  # Choose only specialties and make it a list of one line per specialty (with some providers having multiple entries)
-  data_spec <- data3 %>%
-    filter(specialty) %>%
-    filter(value != "Other") %>%
-    group_by(cred_num,email) %>%
-    summarize(specialties = list(value)) %>%
-    filter(!is.na(email)) %>%
-    group_by(email) %>%
-    reframe(specialties = unlist(specialties)) %>%
-    ungroup()
-  
-  return(data_spec)
-}
+parse_specialties <- function(input = data)
+  parse_specialties <- function(input = data)
+  {
+    # Here's the format:
+    # (Certification) Internal Medicine, (Certification) Pediatrics, (Certification) Preventive Medicine: Addiction Medicine, (Specialty) Emergency Medicine, (Specialty) Internal Medicine 
+    
+    data2 <- data %>%
+      mutate(cert_spec = case_when(
+        cred_type == "APN" ~ "(Specialty) Nurse Practitioner",
+        cred_type == "PA" ~ "(Specialty) Physician Assistant",
+        cred_type == "PHA" ~ "(Specialty) Pharmacist",
+        TRUE ~ cert_spec
+      )) %>%
+      select(-cred_type) %>%
+      separate(cert_spec, into=c("a","b","c","d","e","f","g","h","i","j","k","l","m"),
+               sep = ", ") %>%
+      group_by(cred_num) %>%
+      slice(1) %>%
+      ungroup()
+    
+    
+    data3 <- data2 %>%
+      pivot_longer(-c(cred_num,email)) %>%
+      filter(!is.na(value)) %>%
+      mutate(specialty = 
+               startsWith(value, prefix = "(Specialty)"),
+             certification = 
+               startsWith(value, prefix = "(Certification)")
+      ) %>%
+      mutate(value = gsub(".*) ", "", value))
+    
+    data_spec <- data3 %>%
+      filter(specialty) %>%
+      filter(value != "Other") %>%
+      group_by(cred_num,email) %>%
+      summarize(specialties = list(value)) %>%
+      ungroup()
+    
+    return(data_spec)
+  }
+
+
 
 df <- parse_specialties() 
 
